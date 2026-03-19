@@ -37,15 +37,23 @@ class Bot {
   }
 
   /**
-   * 注册 Bot 快捷命令
+   * 注册 Bot 快捷命令（区分管理员与普通用户）
    */
   async registerBotCommands() {
     try {
-      const commands = [
+      const ownerId = config.getOwnerId();
+
+      // 1. 定义通用命令（所有人可见）
+      const publicCommands = [
         {
           command: 'start',
           description: '🚀 开始使用机器人 / 获取验证码'
-        },
+        }
+      ];
+
+      // 2. 定义管理员专用命令（仅主人可见）
+      const adminCommands = [
+        ...publicCommands,
         {
           command: 'block',
           description: '🚫 拉黑用户 (仅主人可用)'
@@ -56,8 +64,19 @@ class Bot {
         }
       ];
 
-      await this.bot.setMyCommands(commands);
-      logger.info(`✅ 快捷命令注册成功 | 命令数: ${commands.length}`);
+      // 设置全局默认命令（普通用户视角）
+      await this.bot.setMyCommands(publicCommands);
+
+      // 设置特定聊天范围的命令（管理员视角）
+      // 注意：只有当管理员在私聊窗口打开菜单时，才会看到这些额外命令
+      await this.bot.setMyCommands(adminCommands, {
+        scope: {
+          type: 'chat',
+          chat_id: ownerId
+        }
+      });
+
+      logger.info(`✅ 快捷命令注册成功 | 普通: ${publicCommands.length} | 管理员: ${adminCommands.length}`);
       
       return true;
     } catch (error) {
@@ -75,55 +94,45 @@ class Bot {
       this.messageHandler.handleStartCommand(msg);
     });
 
-    // 监听 /block 命令（主人拉黑用户）
-    // 支持两种方式：/block（回复消息）或 /block 123456（直接指定用户ID）
+    // 监听 /block 命令
     this.bot.onText(/\/block(?:\s+(\d+))?/, (msg, match) => {
       const userId = msg.from.id;
       const ownerId = config.getOwnerId();
       
-      // 只有主人可以使用此命令
       if (userId === ownerId) {
-        const targetUserId = match[1]; // 从命令中提取的用户ID
+        const targetUserId = match[1];
         if (targetUserId) {
-          // 直接指定用户ID
           this.messageHandler.handleBlockUserById(msg, targetUserId);
         } else if (msg.reply_to_message) {
-          // 回复消息方式
           this.messageHandler.handleBlockUser(msg);
         } else {
           this.bot.sendMessage(
             ownerId,
             '❌ 使用方法：\n' +
             '1. 回复用户消息并发送 /block\n' +
-            '2. 直接发送 /block 用户ID\n\n' +
-            '例如：/block 123456789'
+            '2. 直接发送 /block 用户ID'
           );
         }
       }
     });
 
-    // 监听 /unblock 命令（主人解除拉黑）
-    // 支持两种方式：/unblock（回复消息）或 /unblock 123456（直接指定用户ID）
+    // 监听 /unblock 命令
     this.bot.onText(/\/unblock(?:\s+(\d+))?/, (msg, match) => {
       const userId = msg.from.id;
       const ownerId = config.getOwnerId();
       
-      // 只有主人可以使用此命令
       if (userId === ownerId) {
-        const targetUserId = match[1]; // 从命令中提取的用户ID
+        const targetUserId = match[1];
         if (targetUserId) {
-          // 直接指定用户ID
           this.messageHandler.handleUnblockUserById(msg, targetUserId);
         } else if (msg.reply_to_message) {
-          // 回复消息方式
           this.messageHandler.handleUnblockUser(msg);
         } else {
           this.bot.sendMessage(
             ownerId,
             '❌ 使用方法：\n' +
             '1. 回复用户消息并发送 /unblock\n' +
-            '2. 直接发送 /unblock 用户ID\n\n' +
-            '例如：/unblock 123456789'
+            '2. 直接发送 /unblock 用户ID'
           );
         }
       }
@@ -131,7 +140,6 @@ class Bot {
 
     // 监听文本消息
     this.bot.on('message', (msg) => {
-      // 排除命令消息（/start, /block, /unblock）
       if (msg.text && !msg.text.startsWith('/')) {
         this.messageHandler.handleTextMessage(msg);
       }
@@ -142,12 +150,11 @@ class Bot {
       this.messageHandler.handlePhotoMessage(msg);
     });
 
-    // 监听轮询错误
+    // 监听错误
     this.bot.on('polling_error', (error) => {
       logger.error(`❌ 轮询错误 | Code: ${error.code} | ${error.message}`);
     });
 
-    // 监听 webhook 错误
     this.bot.on('webhook_error', (error) => {
       logger.error(`❌ Webhook 错误 | ${error.message}`, { stack: error.stack });
     });
@@ -167,8 +174,6 @@ class Bot {
       
       logger.info('='.repeat(50));
       logger.info('🤖 Telegram 消息转发机器人已启动');
-      logger.info('✅ 智能广告过滤系统已激活');
-      logger.info('📡 正在监听消息...');
       logger.info('='.repeat(50));
 
       // 向主人发送启动通知
@@ -176,13 +181,7 @@ class Bot {
         config.getOwnerId(),
         '🤖 机器人已启动！\n\n' +
         '✅ 状态: 运行中\n' +
-        '🛡️ 智能过滤: 已启用\n' +
-        '⚡ 快捷命令: 已注册\n' +
-        `⏰ 时间: ${new Date().toLocaleString('zh-CN')}\n\n` +
-        '💡 可用命令：\n' +
-        '/start - 开始使用\n' +
-        '/block - 拉黑用户\n' +
-        '/unblock - 解除拉黑'
+        '👑 权限: 管理员菜单已激活'
       ).catch(error => {
         logger.warn(`⚠️ 无法向主人发送启动通知 | ${error.message}`);
       });
