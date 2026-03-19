@@ -236,7 +236,7 @@ class MessageHandler {
     try {
       const userId = msg.from.id;
       // 拼接你要求的格式，ID部分加反引号支持点击复制
-      const infoHeader = `📩 来自: ${username} 🅥 ID: \`${userId}\`\n\n${msg.text}`;
+      const infoHeader = `📩 来自: ${username}  ID: \`${userId}\`\n\n${msg.text}`;
 
       const forwardedMsg = await this.bot.sendMessage(
         this.ownerId,
